@@ -3,11 +3,14 @@
   "version": "2.2.2",
   "productName": "Terraza Launcher",
   "description": "Modded Minecraft Launcher",
-  "author": "Daniel Scalzi (https://github.com/dscalzi/HeliosLauncher/)",
+  "author": {
+    "name": "Terraza Studios",
+    "email": "arekforce@gmail.com"
+  },
   "license": "UNLICENSED",
-  "homepage": "https://github.com/TU_USUARIO/TerrazaLauncher",
+  "homepage": "https://github.com/Netososo/TerrazaLauncher",
   "bugs": {
-    "url": "https://github.com/TU_USUARIO/TerrazaLauncher/issues"
+    "url": "https://github.com/Netososo/TerrazaLauncher/issues"
   },
   "private": true,
   "main": "index.js",
