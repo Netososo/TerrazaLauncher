@@ -220,16 +220,50 @@ ipcMain.on(MSFT_OPCODE.OPEN_LOGOUT, (ipcEvent, uuid, isLastAccount) => {
     msftLogoutWindow.loadURL('https://login.microsoftonline.com/common/oauth2/v2.0/logout')
 })
 
-// Keep a global reference of the window object, if you don't, the window will
-// be closed automatically when the JavaScript object is garbage collected.
+// Keep a global reference of the window object
 let win
+// --- NUEVO CÓDIGO PARA DESCARGAR ICONO DESDE URL ---
+const https = require('https')
+const os = require('os')
 
-function createWindow() {
+function downloadIconFromURL(url) {
+    return new Promise((resolve, reject) => {
+        const dest = path.join(os.tmpdir(), 'launcher_dynamic_icon.png')
+        const file = fs.createWriteStream(dest)
+
+        https.get(url, (response) => {
+            response.pipe(file)
+
+            file.on('finish', () => {
+                file.close(() => resolve(dest))
+            })
+        }).on('error', (err) => {
+            reject(err)
+        })
+    })
+}
+// ---------------------------------------------------
+
+
+async function createWindow() {
+
+    // URL del icono dinámico
+    const ICON_URL = "https://terrazastudios.com/terrazalauncher/barra/icon.png"  // <-- Cámbialo
+
+    // Intentar descargar el icono
+    let finalIconPath
+    try {
+        finalIconPath = await downloadIconFromURL(ICON_URL)
+        console.log("Icono descargado desde URL:", finalIconPath)
+    } catch (e) {
+        console.log("Error descargando icono desde URL, usando icono local.")
+        finalIconPath = getPlatformIcon('SealCircle')
+    }
 
     win = new BrowserWindow({
         width: 980,
         height: 552,
-        icon: getPlatformIcon('SealCircle'),
+        icon: finalIconPath,     // ← YA CARGA ICONO DESDE URL
         frame: false,
         webPreferences: {
             preload: path.join(__dirname, 'app', 'assets', 'js', 'preloader.js'),
@@ -238,28 +272,32 @@ function createWindow() {
         },
         backgroundColor: '#171614'
     })
+
     remoteMain.enable(win.webContents)
 
     const data = {
-        bkid: Math.floor((Math.random() * fs.readdirSync(path.join(__dirname, 'app', 'assets', 'images', 'backgrounds')).length)),
+        bkid: Math.floor(
+            (Math.random() * fs.readdirSync(
+                path.join(__dirname, 'app', 'assets', 'images', 'backgrounds')
+            ).length)
+        ),
         lang: (str, placeHolders) => LangLoader.queryEJS(str, placeHolders)
     }
+
     Object.entries(data).forEach(([key, val]) => ejse.data(key, val))
 
-    win.loadURL(pathToFileURL(path.join(__dirname, 'app', 'app.ejs')).toString())
-
-    /*win.once('ready-to-show', () => {
-        win.show()
-    })*/
+    win.loadURL(
+        pathToFileURL(path.join(__dirname, 'app', 'app.ejs')).toString()
+    )
 
     win.removeMenu()
-
     win.resizable = true
 
     win.on('closed', () => {
         win = null
     })
 }
+
 
 function createMenu() {
     

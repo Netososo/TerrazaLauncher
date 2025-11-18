@@ -19,7 +19,7 @@
 
 @font-face {
     font-family: 'Ringbearer';
-    src: url('../fonts/Ringbearer.ttf');
+    src: url('../fonts/ringbearer.ttf');
 }
 
 /*******************************************************************************
@@ -2855,7 +2855,7 @@ input:checked + .toggleSwitchSlider:before {
 
 /* Logo image. */
 #image_seal {
-    height: 70px;
+    height: 90px;
     width: auto;
     position: relative;
     border: 2px solid white;
@@ -2866,8 +2866,8 @@ input:checked + .toggleSwitchSlider:before {
 /* Logo container styles. */
 #image_seal_container {
     position: relative;
-    height: 70px;
-    width: 70px;
+    height: 90px;
+    width: 90px;
     border-radius: 50%;
     margin-top: 50px;
 }
@@ -2926,7 +2926,7 @@ input:checked + .toggleSwitchSlider:before {
 }
 #image_seal_container[update]:hover #updateAvailableTooltip {
     visibility: visible;
-    opacity: 1;
+    opacity: 0;
     transition-delay: 0s;
 }
 
@@ -2970,12 +2970,12 @@ input:checked + .toggleSwitchSlider:before {
 
 /* User profile avatar container. */
 #avatarContainer {
-    border-radius: 50%;
-    border: 2px solid #cad7e1;
+    border-radius: 20%;
+    border: 2px solid #e8ebed;
     box-sizing: border-box;
     background: rgba(1, 2, 1, 0.5);
-    height: 70px;
-    width: 70px;
+    height: 95px;
+    width: 75px;
     box-shadow: 0px 0px 10px 0px rgb(0, 0, 0);
     overflow: hidden;
     position: relative;
@@ -2988,7 +2988,7 @@ input:checked + .toggleSwitchSlider:before {
 #avatarOverlay {
     opacity: 0;
     position: absolute;
-    z-index: 1;
+    z-index: 3;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -2999,8 +2999,8 @@ input:checked + .toggleSwitchSlider:before {
     -webkit-user-select: none;
     border: none;
     cursor: pointer;
-    width: 100%;
-    height: 100%;
+    width: 95%;
+    height: 75%;
     border-radius: 50%;
 }
 #avatarOverlay:hover,
