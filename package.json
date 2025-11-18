@@ -3,20 +3,20 @@
   "version": "2.2.2",
   "productName": "Terraza Launcher",
   "description": "Modded Minecraft Launcher",
-  "author": "Daniel Scalzi (https://github.com/dscalzi/)",
+  "author": "Daniel Scalzi (https://github.com/dscalzi/HeliosLauncher/)",
   "license": "UNLICENSED",
-  "homepage": "https://github.com/dscalzi/HeliosLauncher",
+  "homepage": "https://github.com/TU_USUARIO/TerrazaLauncher",
   "bugs": {
-    "url": "https://github.com/dscalzi/HeliosLauncher/issues"
+    "url": "https://github.com/TU_USUARIO/TerrazaLauncher/issues"
   },
   "private": true,
   "main": "index.js",
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder build",
-    "dist:win": "npm run dist -- -w",
-    "dist:mac": "npm run dist -- -m",
-    "dist:linux": "npm run dist -- -l",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux",
     "lint": "eslint --config .eslintrc.json ."
   },
   "engines": {
@@ -46,6 +46,53 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dscalzi/HeliosLauncher.git"
+    "url": "https://github.com/Netososo/TerrazaLauncher.git"
+  },
+  "build": {
+    "appId": "com.terraza.launcher",
+    "productName": "Terraza Launcher",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Netososo",
+        "repo": "TerrazaLauncher",
+        "releaseType": "draft"
+      }
+    ],
+    "files": [
+      "**/*",
+      "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/.*",
+      "!**/*.map"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.games",
+      "icon": "build/icon.icns"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build"
+    }
   }
 }
