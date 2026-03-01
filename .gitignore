@@ -5,3 +5,24 @@
 /logs/
 /dist/ion 1.0.3
 ion*
+
+# Build output
+dist/
+out/
+release/
+
+# Electron
+*.blockmap
+latest.yml
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.zip
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
