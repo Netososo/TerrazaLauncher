@@ -1,6 +1,6 @@
 {
   "name": "TerrazaLauncher",
-  "version": "3.0.7",
+  "version": "3.0.8",
   "productName": "Terraza Launcher",
   "description": "Modded Minecraft Launcher",
   "author": {
@@ -59,11 +59,11 @@
       "buildResources": "build"
     },
     "publish": [
-    {
-      "provider": "github",
-      "owner": "Netososo",
-      "repo": "TerrazaLauncher"
-    }
+      {
+        "provider": "github",
+        "owner": "Netososo",
+        "repo": "TerrazaLauncher"
+      }
     ],
     "files": [
       "**/*",
