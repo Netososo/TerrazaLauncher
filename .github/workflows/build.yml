@@ -21,18 +21,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Install dependencies
         run: npm install
 
-      - name: Build Windows
+      - name: Build & Publish Windows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run dist:win
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-build
-          path: dist/**/*
 
   build-linux:
     name: Build Linux
@@ -46,18 +43,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Install dependencies
         run: npm install
 
-      - name: Build Linux
+      - name: Build & Publish Linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run dist:linux
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-build
-          path: dist/**/*
 
   build-macos:
     name: Build macOS
@@ -71,37 +65,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Install dependencies
         run: npm install
 
-      - name: Build macOS
+      - name: Build & Publish macOS
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run dist:mac
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: mac-build
-          path: dist/**/*
-
-  release:
-    name: Create GitHub Release
-    runs-on: ubuntu-latest
-    needs: [build-windows, build-linux, build-macos]
-
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: ./release-files
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            release-files/**/*.exe
-            release-files/**/*.AppImage
-            release-files/**/*.deb
-            release-files/**/*.dmg
-            release-files/**/*.zip
-            release-files/latest*.yml
