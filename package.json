@@ -58,12 +58,12 @@
       "output": "dist",
       "buildResources": "build"
     },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "Netososo",
-        "repo": "TerrazaLauncher"
-      }
+    "publish": {
+       "provider": "github",
+       "owner": "Netososo",
+       "repo": "TerrazaLauncher",
+       "releaseType": "release"
+    }
     ],
     "files": [
       "**/*",
