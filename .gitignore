@@ -1,28 +1,42 @@
-/node_modules/
-/.vs/
-/.vscode/
-/target/
-/logs/
-/dist/ion 1.0.3
-ion*
+# ===============================
+# Node / Electron
+# ===============================
+node_modules/
+npm-debug.log*
+yarn-error.log*
 
-# Build output
+# ===============================
+# Build output (CRÍTICO)
+# ===============================
 dist/
 out/
 release/
+build/
 
-# Electron
+# Electron Builder
 *.blockmap
 latest.yml
+builder-effective-config.yaml
+builder-debug.yml
+
+# ===============================
+# Installers / Binaries
+# ===============================
 *.exe
 *.dmg
 *.AppImage
 *.deb
 *.zip
 
-# Node
-node_modules/
-
-# OS
+# ===============================
+# IDE / OS
+# ===============================
+.vs/
+.vscode/
 .DS_Store
 Thumbs.db
+
+# ===============================
+# Logs
+# ===============================
+logs/
