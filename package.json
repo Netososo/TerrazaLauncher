@@ -58,7 +58,13 @@
       "output": "dist",
       "buildResources": "build"
     },
-    "publish": null,
+    "publish": [
+    {
+      "provider": "github",
+      "owner": "Netososo",
+      "repo": "TerrazaLauncher"
+    }
+    ],
     "files": [
       "**/*",
       "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
