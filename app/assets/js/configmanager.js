@@ -1,7 +1,9 @@
+const { ipcRenderer } = require('electron')
 const fs   = require('fs-extra')
 const { LoggerUtil } = require('helios-core')
 const os   = require('os')
 const path = require('path')
+const { SECURE_STORAGE_OPCODE } = require('./ipcconstants')
 
 const logger = LoggerUtil.getLogger('ConfigManager')
 
@@ -104,13 +106,107 @@ const DEFAULT_CONFIG = {
 
 let config = null
 
+const SECURE_STORAGE_PREFIX = 'enc:'
+
+function secureStorageRequest(opcode, value) {
+    if(value == null || typeof value !== 'string' || value.length === 0) {
+        return value
+    }
+
+    try {
+        const response = ipcRenderer.sendSync(opcode, value)
+        if(response != null && response.result === true) {
+            return response.value
+        }
+
+        logger.warn('Secure storage request failed, preserving value in memory.', response?.error)
+    } catch (err) {
+        logger.warn('Secure storage request threw, preserving value in memory.', err)
+    }
+
+    return value
+}
+
+function encryptSecret(value) {
+    if(value == null || typeof value !== 'string' || value.length === 0 || value.startsWith(SECURE_STORAGE_PREFIX)) {
+        return value
+    }
+
+    return secureStorageRequest(SECURE_STORAGE_OPCODE.ENCRYPT_STRING, value)
+}
+
+function decryptSecret(value) {
+    if(value == null || typeof value !== 'string' || value.length === 0 || !value.startsWith(SECURE_STORAGE_PREFIX)) {
+        return value
+    }
+
+    const decrypted = secureStorageRequest(SECURE_STORAGE_OPCODE.DECRYPT_STRING, value)
+    return decrypted === value ? null : decrypted
+}
+
+function transformSensitiveData(sourceConfig, transform) {
+    if(sourceConfig == null) {
+        return sourceConfig
+    }
+
+    sourceConfig.clientToken = transform(sourceConfig.clientToken)
+
+    const authDatabase = sourceConfig.authenticationDatabase || {}
+    for(const authAcc of Object.values(authDatabase)) {
+        authAcc.accessToken = transform(authAcc.accessToken)
+
+        if(authAcc.type === 'microsoft' && authAcc.microsoft != null) {
+            authAcc.microsoft.access_token = transform(authAcc.microsoft.access_token)
+            authAcc.microsoft.refresh_token = transform(authAcc.microsoft.refresh_token)
+        }
+    }
+
+    return sourceConfig
+}
+
+function pruneUndecryptableAccounts(sourceConfig) {
+    const authDatabase = sourceConfig.authenticationDatabase || {}
+
+    for(const [uuid, authAcc] of Object.entries(authDatabase)) {
+        const missingPrimaryToken = typeof authAcc.accessToken !== 'string' || authAcc.accessToken.length === 0
+        const missingMicrosoftTokens = authAcc.type === 'microsoft' && (
+            typeof authAcc.microsoft?.access_token !== 'string' || authAcc.microsoft.access_token.length === 0 ||
+            typeof authAcc.microsoft?.refresh_token !== 'string' || authAcc.microsoft.refresh_token.length === 0
+        )
+
+        if(missingPrimaryToken || missingMicrosoftTokens) {
+            logger.warn(`Dropping stored account ${uuid} because its secure tokens could not be restored.`)
+            delete authDatabase[uuid]
+        }
+    }
+
+    if(sourceConfig.selectedAccount == null || authDatabase[sourceConfig.selectedAccount] == null) {
+        const [firstAccount] = Object.keys(authDatabase)
+        sourceConfig.selectedAccount = firstAccount || null
+    }
+
+    if(Object.keys(authDatabase).length === 0) {
+        sourceConfig.clientToken = null
+    }
+
+    return sourceConfig
+}
+
+function serializeConfig(sourceConfig) {
+    return transformSensitiveData(JSON.parse(JSON.stringify(sourceConfig)), encryptSecret)
+}
+
+function deserializeConfig(sourceConfig) {
+    return pruneUndecryptableAccounts(transformSensitiveData(sourceConfig, decryptSecret))
+}
+
 // Persistance Utility Functions
 
 /**
  * Save the current configuration to a file.
  */
 exports.save = function(){
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 4), 'UTF-8')
+    fs.writeFileSync(configPath, JSON.stringify(serializeConfig(config), null, 4), 'UTF-8')
 }
 
 /**
@@ -136,7 +232,7 @@ exports.load = function(){
     if(doLoad){
         let doValidate = false
         try {
-            config = JSON.parse(fs.readFileSync(configPath, 'UTF-8'))
+            config = deserializeConfig(JSON.parse(fs.readFileSync(configPath, 'UTF-8')))
             doValidate = true
         } catch (err){
             logger.error(err)
@@ -281,7 +377,7 @@ exports.setClientToken = function(clientToken){
  * @returns {string} The ID of the selected serverpack.
  */
 exports.getSelectedServer = function(def = false){
-    return !def ? config.selectedServer : DEFAULT_CONFIG.clientToken
+    return !def ? config.selectedServer : DEFAULT_CONFIG.selectedServer
 }
 
 /**
@@ -361,12 +457,19 @@ exports.addMojangAuthAccount = function(uuid, accessToken, username, displayName
  * 
  * @returns {Object} The authenticated account object created by this action.
  */
-exports.updateMicrosoftAuthAccount = function(uuid, accessToken, msAccessToken, msRefreshToken, msExpires, mcExpires) {
+exports.updateMicrosoftAuthAccount = function(uuid, accessToken, msAccessToken, msRefreshToken, msExpires, mcExpires, displayName = null, skin = undefined) {
     config.authenticationDatabase[uuid].accessToken = accessToken
     config.authenticationDatabase[uuid].expiresAt = mcExpires
     config.authenticationDatabase[uuid].microsoft.access_token = msAccessToken
     config.authenticationDatabase[uuid].microsoft.refresh_token = msRefreshToken
     config.authenticationDatabase[uuid].microsoft.expires_at = msExpires
+    if(typeof displayName === 'string' && displayName.trim().length > 0) {
+        config.authenticationDatabase[uuid].username = displayName.trim()
+        config.authenticationDatabase[uuid].displayName = displayName.trim()
+    }
+    if(skin !== undefined) {
+        config.authenticationDatabase[uuid].skin = skin
+    }
     return config.authenticationDatabase[uuid]
 }
 
@@ -383,7 +486,7 @@ exports.updateMicrosoftAuthAccount = function(uuid, accessToken, msAccessToken, 
  * 
  * @returns {Object} The authenticated account object created by this action.
  */
-exports.addMicrosoftAuthAccount = function(uuid, accessToken, name, mcExpires, msAccessToken, msRefreshToken, msExpires) {
+exports.addMicrosoftAuthAccount = function(uuid, accessToken, name, mcExpires, msAccessToken, msRefreshToken, msExpires, skin = null) {
     config.selectedAccount = uuid
     config.authenticationDatabase[uuid] = {
         type: 'microsoft',
@@ -391,6 +494,7 @@ exports.addMicrosoftAuthAccount = function(uuid, accessToken, name, mcExpires, m
         username: name.trim(),
         uuid: uuid.trim(),
         displayName: name.trim(),
+        skin,
         expiresAt: mcExpires,
         microsoft: {
             access_token: msAccessToken,

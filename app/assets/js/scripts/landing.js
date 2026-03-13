@@ -149,7 +149,9 @@ function updateSelectedAccount(authUser){
             username = authUser.displayName
         }
         if(authUser.uuid != null){
-            document.getElementById('avatarContainer').style.backgroundImage = `url('https://mc-heads.net/body/${authUser.uuid}/right')`
+            const skinIdentifier = encodeURIComponent(authUser.displayName || authUser.uuid)
+            const skinVersion = encodeURIComponent((authUser.skin && (authUser.skin.id || authUser.skin.alias || authUser.skin.url)) || authUser.displayName || authUser.uuid)
+            document.getElementById('avatarContainer').style.backgroundImage = `url('https://mc-heads.net/body/${skinIdentifier}/right?v=${skinVersion}')`
         }
     }
     user_text.innerHTML = username
@@ -728,6 +730,11 @@ let newsArr = null
 
 // News load animation listener.
 let newsLoadingListener = null
+const NEWS_REFRESH_INTERVAL_MS = 60000
+let newsRefreshListener = null
+let newsRefreshHooksBound = false
+let newsRefreshInFlight = false
+let newsDigest = null
 
 /**
  * Set the news loading animation.
@@ -798,6 +805,86 @@ function showNewsAlert(){
     $(newsButtonAlert).fadeIn(250)
 }
 
+function getRemoteNewsRefreshToken() {
+    return Math.floor(Date.now() / NEWS_REFRESH_INTERVAL_MS).toString()
+}
+
+function withRemoteNewsRefreshToken(url) {
+    const parsed = new URL(url)
+    parsed.searchParams.set('launcherRefresh', getRemoteNewsRefreshToken())
+    return parsed.toString()
+}
+
+function buildNewsDigestSource(articles) {
+    if(!Array.isArray(articles)) {
+        return ''
+    }
+
+    return JSON.stringify(articles.map((article) => ({
+        link: article.link,
+        title: article.title,
+        date: article.date,
+        author: article.author,
+        comments: article.comments,
+        commentsLink: article.commentsLink,
+        content: article.content
+    })))
+}
+
+async function calculateNewsDigest(articles) {
+    return digestMessage(buildNewsDigestSource(articles))
+}
+
+async function refreshNewsIfChanged() {
+    if(newsRefreshInFlight) {
+        return
+    }
+
+    newsRefreshInFlight = true
+
+    try {
+        const news = await loadNews()
+        const remoteArticles = news?.articles
+        if(remoteArticles == null) {
+            return
+        }
+
+        const remoteDigest = await calculateNewsDigest(remoteArticles)
+        if(newsDigest == null || remoteDigest !== newsDigest) {
+            loggerLanding.info('Remote news change detected, refreshing news UI.')
+            await reloadNews()
+        }
+    } catch (err) {
+        loggerLanding.warn('Unable to auto-refresh remote news.', err)
+    } finally {
+        newsRefreshInFlight = false
+    }
+}
+
+function startNewsRefreshListener() {
+    if(newsRefreshListener == null) {
+        newsRefreshListener = setInterval(() => {
+            refreshNewsIfChanged()
+        }, NEWS_REFRESH_INTERVAL_MS)
+    }
+
+    if(newsRefreshHooksBound) {
+        return
+    }
+
+    newsRefreshHooksBound = true
+
+    window.addEventListener('focus', () => {
+        refreshNewsIfChanged()
+    })
+
+    document.addEventListener('visibilitychange', () => {
+        if(!document.hidden) {
+            refreshNewsIfChanged()
+        }
+    })
+}
+
 async function digestMessage(str) {
     const msgUint8 = new TextEncoder().encode(str)
     const hashBuffer = await crypto.subtle.digest('SHA-1', msgUint8)
@@ -806,6 +893,54 @@ async function digestMessage(str) {
         .map((b) => b.toString(16).padStart(2, '0'))
         .join('')
     return hashHex
+}
+
+function sanitizeNewsUrl(url) {
+    try {
+        const parsed = new URL(url)
+        if(parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            return parsed.toString()
+        }
+    } catch (err) {
+        loggerLanding.warn('Discarding invalid news URL.', url)
+    }
+
+    return 'about:blank'
+}
+
+function sanitizeNewsContent(content) {
+    const template = document.createElement('template')
+    template.innerHTML = content
+
+    const blockedTags = ['base', 'embed', 'form', 'iframe', 'link', 'meta', 'object', 'script', 'style']
+    for(const tag of blockedTags) {
+        template.content.querySelectorAll(tag).forEach((element) => {
+            element.remove()
+        })
+    }
+
+    template.content.querySelectorAll('*').forEach((element) => {
+        Array.from(element.attributes).forEach((attribute) => {
+            const name = attribute.name.toLowerCase()
+            const value = attribute.value.trim()
+
+            if(name.startsWith('on')) {
+                element.removeAttribute(attribute.name)
+                return
+            }
+
+            if((name === 'href' || name === 'src') && value) {
+                const safeUrl = sanitizeNewsUrl(value)
+                if(safeUrl === 'about:blank') {
+                    element.removeAttribute(attribute.name)
+                } else {
+                    element.setAttribute(attribute.name, safeUrl)
+                }
+            }
+        })
+    })
+
+    return template.innerHTML
 }
 
 /**
@@ -825,6 +960,7 @@ async function initNews(){
 
     if(newsArr == null){
         // News Loading Failed
+        newsDigest = null
         setNewsLoading(false)
 
         await $('#newsErrorLoading').fadeOut(250).promise()
@@ -832,6 +968,7 @@ async function initNews(){
 
     } else if(newsArr.length === 0) {
         // No News Articles
+        newsDigest = await calculateNewsDigest(newsArr)
         setNewsLoading(false)
 
         ConfigManager.setNewsCache({
@@ -845,6 +982,7 @@ async function initNews(){
         await $('#newsErrorNone').fadeIn(250).promise()
     } else {
         // Success
+        newsDigest = await calculateNewsDigest(newsArr)
         setNewsLoading(false)
 
         const lN = newsArr[0]
@@ -935,11 +1073,11 @@ document.addEventListener('keydown', (e) => {
  * @param {number} index The article index.
  */
 function displayArticle(articleObject, index){
-    newsArticleTitle.innerHTML = articleObject.title
+    newsArticleTitle.textContent = articleObject.title
     newsArticleTitle.href = articleObject.link
-    newsArticleAuthor.innerHTML = 'by ' + articleObject.author
-    newsArticleDate.innerHTML = articleObject.date
-    newsArticleComments.innerHTML = articleObject.comments
+    newsArticleAuthor.textContent = 'by ' + articleObject.author
+    newsArticleDate.textContent = articleObject.date
+    newsArticleComments.textContent = articleObject.comments
     newsArticleComments.href = articleObject.commentsLink
     newsArticleContentScrollable.innerHTML = '<div id="newsArticleContentWrapper"><div class="newsArticleSpacerTop"></div>' + articleObject.content + '<div class="newsArticleSpacerBot"></div></div>'
     Array.from(newsArticleContentScrollable.getElementsByClassName('bbCodeSpoilerButton')).forEach(v => {
@@ -977,7 +1115,8 @@ async function loadNews(){
     const promise = new Promise((resolve) => {
 
         $.ajax({
-            url: newsFeed,
+            url: withRemoteNewsRefreshToken(newsFeed),
+            cache: false,
             success: (data) => {
                 const items = $(data).find('item')
                 const articles = []
@@ -1008,14 +1147,16 @@ async function loadNews(){
                         )
                     }
 
+                    const articleLink = sanitizeNewsUrl(el.find('link').text())
+
                     articles.push({
-                        link: el.find('link').text(),
+                        link: articleLink,
                         title: el.find('title').text(),
                         date,
                         author: el.find('dc\\:creator').text(),
-                        content,
+                        content: sanitizeNewsContent(content),
                         comments,
-                        commentsLink: el.find('link').text() + '#comments'
+                        commentsLink: articleLink === 'about:blank' ? articleLink : `${articleLink}#comments`
                     })
                 }
 

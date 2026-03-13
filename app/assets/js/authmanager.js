@@ -142,7 +142,6 @@ function mojangErrorDisplayable(errorCode) {
 exports.addMojangAccount = async function(username, password) {
     try {
         const response = await MojangRestAPI.authenticate(username, password, ConfigManager.getClientToken())
-        console.log(response)
         if(response.responseStatus === RestResponseStatus.SUCCESS) {
 
             const session = response.data
@@ -239,6 +238,33 @@ function calculateExpiryDate(nowMs, epiresInS) {
 }
 
 /**
+ * Resolve the currently active official skin from the Minecraft profile payload.
+ *
+ * @param {Object} mcProfile Minecraft profile response.
+ * @returns {Object|null} Active skin metadata or null if unavailable.
+ */
+function resolveActiveMicrosoftSkin(mcProfile) {
+    if(mcProfile == null || !Array.isArray(mcProfile.skins)) {
+        return null
+    }
+
+    const activeSkin = mcProfile.skins.find((skin) => skin != null && skin.state === 'ACTIVE' && skin.url)
+        || mcProfile.skins.find((skin) => skin != null && skin.url)
+
+    if(activeSkin == null) {
+        return null
+    }
+
+    return {
+        id: activeSkin.id || null,
+        state: activeSkin.state || null,
+        url: activeSkin.url,
+        variant: activeSkin.variant || null,
+        alias: activeSkin.alias || null
+    }
+}
+
+/**
  * Add a Microsoft account. This will pass the provided auth code to Mojang's OAuth2.0 flow.
  * The resultant data will be stored as an auth account in the configuration database.
  * 
@@ -259,7 +285,8 @@ exports.addMicrosoftAccount = async function(authCode) {
         calculateExpiryDate(now, fullAuth.mcToken.expires_in),
         fullAuth.accessToken.access_token,
         fullAuth.accessToken.refresh_token,
-        calculateExpiryDate(now, fullAuth.accessToken.expires_in)
+        calculateExpiryDate(now, fullAuth.accessToken.expires_in),
+        resolveActiveMicrosoftSkin(fullAuth.mcProfile)
     )
     ConfigManager.save()
 
@@ -319,9 +346,14 @@ exports.removeMicrosoftAccount = async function(uuid){
  */
 async function validateSelectedMojangAccount(){
     const current = ConfigManager.getSelectedAccount()
-    const response = await MojangRestAPI.validate(current.accessToken, ConfigManager.getClientToken())
+    try {
+        const response = await MojangRestAPI.validate(current.accessToken, ConfigManager.getClientToken())
 
-    if(response.responseStatus === RestResponseStatus.SUCCESS) {
+        if(response.responseStatus !== RestResponseStatus.SUCCESS) {
+            log.warn('Unable to validate selected profile, preserving cached session.', response.error || response.mojangErrorCode)
+            return true
+        }
+
         const isValid = response.data
         if(!isValid){
             const refreshResponse = await MojangRestAPI.refresh(current.accessToken, ConfigManager.getClientToken())
@@ -329,19 +361,25 @@ async function validateSelectedMojangAccount(){
                 const session = refreshResponse.data
                 ConfigManager.updateMojangAuthAccount(current.uuid, session.accessToken)
                 ConfigManager.save()
-            } else {
-                log.error('Error while validating selected profile:', refreshResponse.error)
+                log.info('Account access token validated.')
+                return true
+            }
+
+            if(refreshResponse.mojangErrorCode === MojangErrorCode.ERROR_INVALID_TOKEN) {
                 log.info('Account access token is invalid.')
                 return false
             }
-            log.info('Account access token validated.')
-            return true
-        } else {
-            log.info('Account access token validated.')
+
+            log.warn('Unable to refresh selected profile, preserving cached session.', refreshResponse.error || refreshResponse.mojangErrorCode)
             return true
         }
+
+        log.info('Account access token validated.')
+        return true
+    } catch (err) {
+        log.error('Error while validating selected profile:', err)
+        return true
     }
-    
 }
 
 /**
@@ -378,7 +416,9 @@ async function validateSelectedMicrosoftAccount(){
                 res.accessToken.access_token,
                 res.accessToken.refresh_token,
                 calculateExpiryDate(now, res.accessToken.expires_in),
-                calculateExpiryDate(now, res.mcToken.expires_in)
+                calculateExpiryDate(now, res.mcToken.expires_in),
+                res.mcProfile.name,
+                resolveActiveMicrosoftSkin(res.mcProfile)
             )
             ConfigManager.save()
             return true
@@ -396,7 +436,9 @@ async function validateSelectedMicrosoftAccount(){
                 current.microsoft.access_token,
                 current.microsoft.refresh_token,
                 current.microsoft.expires_at,
-                calculateExpiryDate(now, res.mcToken.expires_in)
+                calculateExpiryDate(now, res.mcToken.expires_in),
+                res.mcProfile.name,
+                resolveActiveMicrosoftSkin(res.mcProfile)
             )
             ConfigManager.save()
             return true

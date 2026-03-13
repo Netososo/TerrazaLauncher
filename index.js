@@ -2,15 +2,15 @@ const remoteMain = require('@electron/remote/main')
 remoteMain.initialize()
 
 // Requirements
-const { app, BrowserWindow, ipcMain, Menu, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, Menu, nativeImage, safeStorage, shell } = require('electron')
 const autoUpdater                       = require('electron-updater').autoUpdater
 const ejse                              = require('ejs-electron')
 const fs                                = require('fs')
 const isDev                             = require('./app/assets/js/isdev')
 const path                              = require('path')
 const semver                            = require('semver')
-const { pathToFileURL }                 = require('url')
-const { AZURE_CLIENT_ID, MSFT_OPCODE, MSFT_REPLY_TYPE, MSFT_ERROR, SHELL_OPCODE } = require('./app/assets/js/ipcconstants')
+const { URL, pathToFileURL }            = require('url')
+const { AZURE_CLIENT_ID, MSFT_OPCODE, MSFT_REPLY_TYPE, MSFT_ERROR, SECURE_STORAGE_OPCODE, SHELL_OPCODE } = require('./app/assets/js/ipcconstants')
 const LangLoader                        = require('./app/assets/js/langloader')
 
 // Setup Lang
@@ -104,6 +104,79 @@ ipcMain.handle(SHELL_OPCODE.TRASH_ITEM, async (event, ...args) => {
     }
 })
 
+const SECURE_STORAGE_PREFIX = 'enc:'
+
+function protectConfigSecret(value) {
+    if(typeof value !== 'string' || value.length === 0) {
+        return {
+            result: true,
+            value
+        }
+    }
+
+    if(!safeStorage.isEncryptionAvailable()) {
+        return {
+            result: true,
+            value
+        }
+    }
+
+    try {
+        return {
+            result: true,
+            value: `${SECURE_STORAGE_PREFIX}${safeStorage.encryptString(value).toString('base64')}`
+        }
+    } catch (error) {
+        return {
+            result: false,
+            error: error.message
+        }
+    }
+}
+
+function restoreConfigSecret(value) {
+    if(typeof value !== 'string' || value.length === 0 || !value.startsWith(SECURE_STORAGE_PREFIX)) {
+        return {
+            result: true,
+            value
+        }
+    }
+
+    if(!safeStorage.isEncryptionAvailable()) {
+        return {
+            result: false,
+            error: 'Safe storage is not available on this system profile.'
+        }
+    }
+
+    try {
+        const encryptedBuffer = Buffer.from(value.substring(SECURE_STORAGE_PREFIX.length), 'base64')
+        return {
+            result: true,
+            value: safeStorage.decryptString(encryptedBuffer)
+        }
+    } catch (error) {
+        return {
+            result: false,
+            error: error.message
+        }
+    }
+}
+
+function openExternalUrl(url) {
+    shell.openExternal(url).catch((error) => {
+        console.warn('Failed to open external URL.', url, error)
+    })
+}
+
+ipcMain.on(SECURE_STORAGE_OPCODE.ENCRYPT_STRING, (event, value) => {
+    event.returnValue = protectConfigSecret(value)
+})
+
+ipcMain.on(SECURE_STORAGE_OPCODE.DECRYPT_STRING, (event, value) => {
+    event.returnValue = restoreConfigSecret(value)
+})
+
 // Disable hardware acceleration.
 // https://electronjs.org/docs/tutorial/offscreen-rendering
 app.disableHardwareAcceleration()
@@ -130,7 +203,12 @@ ipcMain.on(MSFT_OPCODE.OPEN_LOGIN, (ipcEvent, ...arguments_) => {
         width: 520,
         height: 600,
         frame: true,
-        icon: getPlatformIcon('SealCircle')
+        icon: getPlatformIcon('SealCircle'),
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true
+        }
     })
 
     msftAuthWindow.on('closed', () => {
@@ -183,7 +261,12 @@ ipcMain.on(MSFT_OPCODE.OPEN_LOGOUT, (ipcEvent, uuid, isLastAccount) => {
         width: 520,
         height: 600,
         frame: true,
-        icon: getPlatformIcon('SealCircle')
+        icon: getPlatformIcon('SealCircle'),
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true
+        }
     })
 
     msftLogoutWindow.on('closed', () => {
@@ -222,48 +305,147 @@ ipcMain.on(MSFT_OPCODE.OPEN_LOGOUT, (ipcEvent, uuid, isLastAccount) => {
 
 // Keep a global reference of the window object
 let win
-// --- NUEVO CÓDIGO PARA DESCARGAR ICONO DESDE URL ---
+let iconRefreshListener = null
+let currentWindowIconSignature = null
+const http = require('http')
 const https = require('https')
 const os = require('os')
+const crypto = require('crypto')
+const ICON_DOWNLOAD_TIMEOUT_MS = 3000
+const ICON_REFRESH_INTERVAL_MS = 60000
+const MAX_ICON_REDIRECTS = 3
+const ICON_URL = 'https://terrazastudios.com/terrazalauncher/barra/icon.png'
 
-function downloadIconFromURL(url) {
+function withIconRefreshToken(url, token = Math.floor(Date.now() / ICON_REFRESH_INTERVAL_MS).toString()) {
+    const parsed = new URL(url)
+    parsed.searchParams.set('launcherRefresh', token)
+    return parsed.toString()
+}
+
+function downloadIconFromURL(url, redirectCount = 0) {
     return new Promise((resolve, reject) => {
-        const dest = path.join(os.tmpdir(), 'launcher_dynamic_icon.png')
-        const file = fs.createWriteStream(dest)
+        const requestUrl = withIconRefreshToken(url)
+        const transport = requestUrl.startsWith('https:') ? https : http
+        let settled = false
 
-        https.get(url, (response) => {
-            response.pipe(file)
-
-            file.on('finish', () => {
-                file.close(() => resolve(dest))
-            })
-        }).on('error', (err) => {
+        const finishWithError = (err) => {
+            if(settled) {
+                return
+            }
+            settled = true
             reject(err)
+        }
+
+        const request = transport.get(requestUrl, (response) => {
+            const statusCode = response.statusCode || 0
+
+            if([301, 302, 303, 307, 308].includes(statusCode) && response.headers.location) {
+                response.resume()
+                if(redirectCount >= MAX_ICON_REDIRECTS) {
+                    finishWithError(new Error('Too many redirects while downloading the launcher icon.'))
+                    return
+                }
+
+                const redirectedUrl = new URL(response.headers.location, requestUrl).toString()
+                downloadIconFromURL(redirectedUrl, redirectCount + 1).then(resolve).catch(finishWithError)
+                return
+            }
+
+            if(statusCode !== 200) {
+                response.resume()
+                finishWithError(new Error(`Unexpected status code: ${statusCode}`))
+                return
+            }
+
+            const chunks = []
+            response.on('data', (chunk) => {
+                chunks.push(chunk)
+            })
+            response.on('end', () => {
+                if(settled) {
+                    return
+                }
+
+                try {
+                    const buffer = Buffer.concat(chunks)
+                    const signature = crypto.createHash('sha1').update(buffer).digest('hex')
+                    const dest = path.join(os.tmpdir(), `launcher_dynamic_icon_${signature}.png`)
+                    fs.writeFile(dest, buffer, (err) => {
+                        if(err) {
+                            finishWithError(err)
+                            return
+                        }
+
+                        settled = true
+                        resolve({ path: dest, signature })
+                    })
+                } catch (err) {
+                    finishWithError(err)
+                }
+            })
+            response.on('error', finishWithError)
         })
+
+        request.setTimeout(ICON_DOWNLOAD_TIMEOUT_MS, () => {
+            request.destroy(new Error(`Icon download timed out after ${ICON_DOWNLOAD_TIMEOUT_MS}ms`))
+        })
+        request.on('error', finishWithError)
     })
 }
-// ---------------------------------------------------
 
+async function refreshWindowIcon(force = false) {
+    if(win == null || win.isDestroyed()) {
+        return
+    }
+
+    try {
+        const remoteIcon = await downloadIconFromURL(ICON_URL)
+        if(force || remoteIcon.signature !== currentWindowIconSignature) {
+            currentWindowIconSignature = remoteIcon.signature
+            if(typeof win.setIcon === 'function') {
+                win.setIcon(nativeImage.createFromPath(remoteIcon.path))
+            }
+            console.log('Icono remoto actualizado desde la web.')
+        }
+    } catch (error) {
+        console.log(`No se pudo actualizar el icono remoto: ${error.message}`)
+    }
+}
+
+function startWindowIconRefresh() {
+    if(iconRefreshListener != null) {
+        clearInterval(iconRefreshListener)
+    }
+
+    iconRefreshListener = setInterval(() => {
+        refreshWindowIcon()
+    }, ICON_REFRESH_INTERVAL_MS)
+}
+
+function stopWindowIconRefresh() {
+    if(iconRefreshListener != null) {
+        clearInterval(iconRefreshListener)
+        iconRefreshListener = null
+    }
+}
 
 async function createWindow() {
 
-    // URL del icono dinámico
-    const ICON_URL = "https://terrazastudios.com/terrazalauncher/barra/icon.png"  // <-- Cámbialo
-
-    // Intentar descargar el icono
-    let finalIconPath
+    // Try the remote icon first and fall back to the bundled asset.
+    let finalIconPath = getPlatformIcon('SealCircle')
     try {
-        finalIconPath = await downloadIconFromURL(ICON_URL)
-        console.log("Icono descargado desde URL:", finalIconPath)
+        const remoteIcon = await downloadIconFromURL(ICON_URL)
+        finalIconPath = remoteIcon.path
+        currentWindowIconSignature = remoteIcon.signature
+        console.log('Icono descargado desde URL:', finalIconPath)
     } catch (e) {
-        console.log("Error descargando icono desde URL, usando icono local.")
-        finalIconPath = getPlatformIcon('SealCircle')
+        console.log(`Error descargando icono desde URL, usando icono local. ${e.message}`)
     }
 
     win = new BrowserWindow({
         width: 980,
         height: 552,
-        icon: finalIconPath,     // ← YA CARGA ICONO DESDE URL
+        icon: finalIconPath,
         frame: false,
         webPreferences: {
             preload: path.join(__dirname, 'app', 'assets', 'js', 'preloader.js'),
@@ -274,6 +456,20 @@ async function createWindow() {
     })
 
     remoteMain.enable(win.webContents)
+
+    const appUrl = pathToFileURL(path.join(__dirname, 'app', 'app.ejs')).toString()
+
+    win.webContents.setWindowOpenHandler(({ url }) => {
+        openExternalUrl(url)
+        return { action: 'deny' }
+    })
+
+    win.webContents.on('will-navigate', (event, url) => {
+        if(url !== appUrl) {
+            event.preventDefault()
+            openExternalUrl(url)
+        }
+    })
 
     const data = {
         bkid: Math.floor(
@@ -286,14 +482,20 @@ async function createWindow() {
 
     Object.entries(data).forEach(([key, val]) => ejse.data(key, val))
 
-    win.loadURL(
-        pathToFileURL(path.join(__dirname, 'app', 'app.ejs')).toString()
-    )
+    win.loadURL(appUrl)
 
     win.removeMenu()
     win.resizable = true
 
+    startWindowIconRefresh()
+
+    win.on('focus', () => {
+        refreshWindowIcon()
+    })
+
     win.on('closed', () => {
+        stopWindowIconRefresh()
+        currentWindowIconSignature = null
         win = null
     })
 }

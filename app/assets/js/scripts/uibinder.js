@@ -69,7 +69,9 @@ async function showMainUI(data){
     refreshServerStatus()
     setTimeout(() => {
         document.getElementById('frameBar').style.backgroundColor = 'rgba(0, 0, 0, 0.5)'
-        document.body.style.backgroundImage = `url('https://terrazastudios.com/terrazalauncher/backgrounds/${document.body.getAttribute('bkid')}.jpg')`
+        if(typeof refreshRemoteVisualAssets === 'function') {
+            refreshRemoteVisualAssets(true)
+        }
         $('#main').show()
 
         const isLoggedIn = Object.keys(ConfigManager.getAuthAccounts()).length > 0
@@ -106,6 +108,7 @@ async function showMainUI(data){
     // Disable tabbing to the news container.
     initNews().then(() => {
         $('#newsContainer *').attr('tabindex', '-1')
+        startNewsRefreshListener()
     })
 }
 

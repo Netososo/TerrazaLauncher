@@ -305,7 +305,7 @@ function populateAccountListings(){
     let htmlString = ''
     for(let i=0; i<accounts.length; i++){
         htmlString += `<button class="accountListing" uuid="${accounts[i].uuid}" ${i===0 ? 'selected' : ''}>
-            <img src="https://mc-heads.net/head/${accounts[i].uuid}/40">
+            <img src="https://mc-heads.net/head/${encodeURIComponent(accounts[i].displayName || accounts[i].uuid)}/40?v=${encodeURIComponent((accounts[i].skin && (accounts[i].skin.id || accounts[i].skin.alias || accounts[i].skin.url)) || accounts[i].displayName || accounts[i].uuid)}">
             <div class="accountListingName">${accounts[i].displayName}</div>
         </button>`
     }

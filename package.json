@@ -1,6 +1,6 @@
 {
   "name": "TerrazaLauncher",
-  "version": "3.0.8",
+  "version": "3.0.9",
   "productName": "Terraza Launcher",
   "description": "Modded Minecraft Launcher",
   "author": {
@@ -59,10 +59,10 @@
       "buildResources": "build"
     },
     "publish": {
-       "provider": "github",
-       "owner": "Netososo",
-       "repo": "TerrazaLauncher",
-       "releaseType": "release"
+      "provider": "github",
+      "owner": "Netososo",
+      "repo": "TerrazaLauncher",
+      "releaseType": "release"
     },
     "files": [
       "**/*",
@@ -86,7 +86,8 @@
         "zip"
       ],
       "category": "public.app-category.games",
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "artifactName": "Terraza-Launcher-Setup-${version}-${arch}.${ext}"
     },
     "linux": {
       "target": [
@@ -94,6 +95,7 @@
         "deb"
       ],
       "icon": "build"
-    }
+    },
+    "artifactName": "Terraza-Launcher-Setup-${version}.${ext}"
   }
 }
