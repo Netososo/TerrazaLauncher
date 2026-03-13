@@ -26,7 +26,7 @@ jobs:
         run: npm install
 
       - name: Build Windows
-        run: npm run dist:win
+        run: npm run dist:win -- --publish never
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -51,7 +51,7 @@ jobs:
         run: npm install
 
       - name: Build Linux
-        run: npm run dist:linux
+        run: npm run dist:linux -- --publish never
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -76,7 +76,7 @@ jobs:
         run: npm install
 
       - name: Build macOS
-        run: npm run dist:mac
+        run: npm run dist:mac -- --publish never
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -105,3 +105,5 @@ jobs:
             release-files/**/*.dmg
             release-files/**/*.zip
             release-files/latest*.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
