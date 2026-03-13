@@ -99,11 +99,14 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            release-files/**/*.exe
-            release-files/**/*.AppImage
-            release-files/**/*.deb
-            release-files/**/*.dmg
-            release-files/**/*.zip
-            release-files/latest*.yml
+            release-files/**/Terraza-Launcher-Setup-*.exe
+            release-files/**/Terraza-Launcher-Setup-*.exe.blockmap
+            release-files/**/Terraza-Launcher-Setup-*.AppImage
+            release-files/**/Terraza-Launcher-Setup-*.deb
+            release-files/**/Terraza-Launcher-Setup-*.dmg
+            release-files/**/Terraza-Launcher-Setup-*.dmg.blockmap
+            release-files/**/Terraza-Launcher-Setup-*.zip
+            release-files/**/Terraza-Launcher-Setup-*.zip.blockmap
+            release-files/**/latest*.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
