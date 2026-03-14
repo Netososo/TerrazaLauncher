@@ -1,6 +1,13 @@
 (() => {
     const REMOTE_VISUAL_REFRESH_INTERVAL_MS = 60000
     const REMOTE_BACKGROUND_BASE = 'https://terrazastudios.com/terrazalauncher/backgrounds/'
+    const REMOTE_FLEX_IMAGE_ASSETS = [
+        {
+            id: 'image_seal',
+            baseUrl: 'https://terrazastudios.com/terrazalauncher/iconos/Logo',
+            extensions: ['gif', 'png']
+        }
+    ]
     const REMOTE_LOADING_ASSETS = [
         { id: 'loadCenterImage', url: 'https://terrazastudios.com/terrazalauncher/iconos/LoadingSeal.png' },
         { id: 'loadSpinnerImage', url: 'https://terrazastudios.com/terrazalauncher/iconos/LoadingText.png' }
@@ -74,6 +81,54 @@
         element.src = nextSource
     }
 
+    async function resolveRemoteImageAssetUrl(asset, token) {
+        const element = document.getElementById(asset.id)
+        const candidates = []
+
+        if(element?.dataset.assetBaseUrl != null && element.dataset.assetBaseUrl.length > 0) {
+            candidates.push(element.dataset.assetBaseUrl)
+        }
+
+        for(const ext of asset.extensions) {
+            const candidate = `${asset.baseUrl}.${ext}`
+            if(!candidates.includes(candidate)) {
+                candidates.push(candidate)
+            }
+        }
+
+        for(const candidate of candidates) {
+            try {
+                await waitForImage(withRemoteVisualRefreshToken(candidate, token))
+                return candidate
+            } catch (err) {
+                // Try the next known extension.
+            }
+        }
+
+        return null
+    }
+
+    async function refreshFlexibleRemoteImageElement(asset, token) {
+        const element = document.getElementById(asset.id)
+        if(element == null) {
+            return
+        }
+
+        const assetBaseUrl = await resolveRemoteImageAssetUrl(asset, token)
+        if(assetBaseUrl == null) {
+            return
+        }
+
+        const nextSource = withRemoteVisualRefreshToken(assetBaseUrl, token)
+        if(element.dataset.remoteSource === nextSource) {
+            return
+        }
+
+        element.dataset.assetBaseUrl = assetBaseUrl
+        element.dataset.remoteSource = nextSource
+        element.src = nextSource
+    }
+
     async function applyRemoteBackground(token) {
         const backgroundBaseUrl = await resolveRemoteBackgroundBaseUrl(token)
         if(backgroundBaseUrl == null) {
@@ -109,6 +164,9 @@
         try {
             for(const asset of REMOTE_LOADING_ASSETS) {
                 refreshRemoteImageElement(asset, token)
+            }
+            for(const asset of REMOTE_FLEX_IMAGE_ASSETS) {
+                await refreshFlexibleRemoteImageElement(asset, token)
             }
             await applyRemoteBackground(token)
         } catch (err) {

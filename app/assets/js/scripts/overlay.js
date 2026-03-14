@@ -118,6 +118,9 @@ function toggleOverlay(toggleState, dismissable = false, content = 'overlayConte
 }
 
 async function toggleServerSelection(toggleState){
+    if(typeof isDistributionAvailable === 'function' && !isDistributionAvailable()){
+        return
+    }
     await prepareServerSelectionList()
     toggleOverlay(toggleState, true, 'serverSelectContent')
 }
@@ -268,6 +271,11 @@ function setAccountListingHandlers(){
 }
 
 async function populateServerListings(){
+    if(typeof isDistributionAvailable === 'function' && !isDistributionAvailable()){
+        document.getElementById('serverSelectListScrollable').innerHTML = ''
+        return
+    }
+
     const distro = await DistroAPI.getDistribution()
     const giaSel = ConfigManager.getSelectedServer()
     const servers = distro.servers

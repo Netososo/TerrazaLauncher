@@ -42,6 +42,44 @@ const user_text               = document.getElementById('user_text')
 
 const loggerLanding = LoggerUtil.getLogger('Landing')
 
+function hasDistributionAvailable(){
+    return typeof isDistributionAvailable === 'function' && isDistributionAvailable()
+}
+
+async function getDistributionSafe(){
+    if(!hasDistributionAvailable()){
+        return null
+    }
+
+    try {
+        return await DistroAPI.getDistribution()
+    } catch (err) {
+        loggerLanding.warn('Distribution data is unavailable, switching to limited mode.', err)
+        if(typeof setDistributionAvailability === 'function'){
+            setDistributionAvailability(false)
+        }
+        return null
+    }
+}
+
+async function getSelectedServerSafe(){
+    const distro = await getDistributionSafe()
+    if(distro == null){
+        return null
+    }
+
+    const selectedServer = ConfigManager.getSelectedServer()
+    if(selectedServer == null){
+        return null
+    }
+
+    return distro.getServerById(selectedServer)
+}
+
+function setServerSelectionEnabled(val){
+    server_selection_button.disabled = !val
+}
+
 /* Launch Progress Wrapper Functions */
 
 /**
@@ -102,7 +140,12 @@ function setLaunchEnabled(val){
 document.getElementById('launch_button').addEventListener('click', async e => {
     loggerLanding.info('Launching game..')
     try {
-        const server = (await DistroAPI.getDistribution()).getServerById(ConfigManager.getSelectedServer())
+        const server = await getSelectedServerSafe()
+        if(server == null){
+            showLaunchFailure(Lang.queryJS('landing.dlAsync.fatalError'), Lang.queryJS('landing.dlAsync.unableToLoadDistributionIndex'))
+            return
+        }
+
         const jExe = ConfigManager.getJavaExecutable(ConfigManager.getSelectedServer())
         if(jExe == null){
             await asyncSystemScan(server.effectiveJavaOptions)
@@ -165,7 +208,17 @@ function updateSelectedServer(serv){
     }
     ConfigManager.setSelectedServer(serv != null ? serv.rawServer.id : null)
     ConfigManager.save()
-    server_selection_button.innerHTML = '&#8226; ' + (serv != null ? serv.rawServer.name : Lang.queryJS('landing.noSelection'))
+
+    if(serv != null){
+        server_selection_button.innerHTML = '&#8226; ' + serv.rawServer.name
+    } else if(hasDistributionAvailable()) {
+        server_selection_button.innerHTML = '&#8226; ' + Lang.queryJS('landing.selectedServer.noSelection')
+    } else {
+        server_selection_button.innerHTML = '&#8226; ' + Lang.queryJS('landing.selectedServer.unavailable')
+    }
+
+    setServerSelectionEnabled(hasDistributionAvailable())
+
     if(getCurrentView() === VIEWS.settings){
         animateSettingsTabRefresh()
     }
@@ -175,6 +228,9 @@ function updateSelectedServer(serv){
 server_selection_button.innerHTML = '&#8226; ' + Lang.queryJS('landing.selectedServer.loading')
 server_selection_button.onclick = async e => {
     e.target.blur()
+    if(!hasDistributionAvailable()){
+        return
+    }
     await toggleServerSelection(true)
 }
 
@@ -239,22 +295,24 @@ const refreshMojangStatuses = async function(){
 
 const refreshServerStatus = async (fade = false) => {
     loggerLanding.info('Refreshing Server Status')
-    const serv = (await DistroAPI.getDistribution()).getServerById(ConfigManager.getSelectedServer())
+    const serv = await getSelectedServerSafe()
 
     let pLabel = Lang.queryJS('landing.serverStatus.server')
-    let pVal = Lang.queryJS('landing.serverStatus.offline')
+    let pVal = hasDistributionAvailable()
+        ? Lang.queryJS('landing.serverStatus.offline')
+        : Lang.queryJS('landing.serverStatus.unavailable')
 
-    try {
-
-        const servStat = await getServerStatus(47, serv.hostname, serv.port)
-        console.log(servStat)
-        pLabel = Lang.queryJS('landing.serverStatus.players')
-        pVal = servStat.players.online + '/' + servStat.players.max
-
-    } catch (err) {
-        loggerLanding.warn('Unable to refresh server status, assuming offline.')
-        loggerLanding.debug(err)
+    if(serv != null){
+        try {
+            const servStat = await getServerStatus(47, serv.hostname, serv.port)
+            pLabel = Lang.queryJS('landing.serverStatus.players')
+            pVal = servStat.players.online + '/' + servStat.players.max
+        } catch (err) {
+            loggerLanding.warn('Unable to refresh server status, assuming offline.')
+            loggerLanding.debug(err)
+        }
     }
+
     if(fade){
         $('#server_status_wrapper').fadeOut(250, () => {
             document.getElementById('landingPlayerLabel').innerHTML = pLabel
@@ -1096,7 +1154,11 @@ function displayArticle(articleObject, index){
  */
 async function loadNews(){
 
-    const distroData = await DistroAPI.getDistribution()
+    const distroData = await getDistributionSafe()
+    if(distroData == null){
+        return null
+    }
+
     const newsFeed = distroData.rawDistribution.rss
 
     if(!newsFeed){

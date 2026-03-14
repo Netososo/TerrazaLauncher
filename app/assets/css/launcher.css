@@ -3966,3 +3966,30 @@ input:checked + .toggleSwitchSlider:before {
 .rotating {
     animation: rotating 10s linear infinite;
 }
+.settingsNavItem:disabled {
+    opacity: 0.5;
+    cursor: default;
+    pointer-events: none;
+    text-shadow: none;
+}
+
+.settingsSwitchServerButton:disabled {
+    opacity: 0.45;
+    cursor: default;
+    pointer-events: none;
+    box-shadow: none;
+}
+
+.settingsUnavailableMessage {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: 0.4px;
+}
+
+#server_selection_button:disabled {
+    opacity: 0.65;
+    cursor: default;
+    pointer-events: none;
+    text-shadow: none;
+}

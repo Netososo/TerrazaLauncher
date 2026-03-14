@@ -164,11 +164,13 @@ noAccountSelected = "No Account Selected"
 [js.landing.selectedServer]
 noSelection = "No Server Selected"
 loading = "Loading.."
+unavailable = "Distribution Pending"
 
 [js.landing.serverStatus]
 server = "SERVER"
 offline = "OFFLINE"
 players = "PLAYERS"
+unavailable = "UNAVAILABLE"
 
 [js.landing.systemScan]
 checking = "Checking system info.."
@@ -265,6 +267,14 @@ invalidSelection = "Invalid Selection"
 requiresJava = "Requires Java {major} x64."
 availableOptions = "Available Options for Java {major} (HotSpot VM)"
 
+[js.settings.distributionFallback]
+tabDisabled = "Available once distribution.json is published."
+serverPending = "Server data will appear once distribution.json is available."
+modsPending = "Mods will unlock once distribution.json is available."
+dropinsPending = "Drop-in mods will unlock once distribution.json is available."
+shaderpacksPending = "Shaderpacks unlock after distribution.json is available."
+javaPending = "Java configuration unlocks when a server distribution is available."
+jvmOptionsPending = "JVM options unlock after distribution.json is available."
 [js.settings.about]
 preReleaseTitle = "Pre-release"
 stableReleaseTitle = "Stable Release"
@@ -288,7 +298,9 @@ okButton = "OK"
 fatalErrorTitle = "Fatal Error: Unable to Load Distribution Index"
 fatalErrorMessage = "A connection could not be established to our servers to download the distribution index. No local copies were available to load. <br><br>The distribution index is an essential file which provides the latest server information. The launcher is unable to start without it. Ensure you are connected to the internet and relaunch the application."
 closeButton = "Close"
-
+limitedModeTitle = "Launcher Started in Limited Mode"
+limitedModeMessage = "The launcher could not load distribution.json yet, so Minecraft launch, server selection, mods, and Java server settings are temporarily disabled.<br><br>You can still sign in, manage accounts, and change general launcher settings while you finish publishing the distribution."
+continueButton = "Continue"
 [js.uibinder.validateAccount]
 failedMessageTitle = "Failed to Refresh Login"
 failedMessage = "We were unable to refresh the login for <strong>{account}</strong>. Please select another account or login again."

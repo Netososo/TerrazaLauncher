@@ -9,6 +9,52 @@ const settingsState = {
     invalid: new Set()
 }
 
+function hasSelectedServerContext(){
+    return (typeof isDistributionAvailable === 'function' ? isDistributionAvailable() : false) && ConfigManager.getSelectedServer() != null
+}
+
+function renderDistributionUnavailableMessage(key){
+    return `<div class="settingsUnavailableMessage">${Lang.queryJS(key)}</div>`
+}
+
+function setDistributionDependentSettingsEnabled(enabled){
+    const disabledTitle = enabled ? '' : Lang.queryJS('settings.distributionFallback.tabDisabled')
+
+    Array.from(document.querySelectorAll('.settingsNavItem[rSc="settingsTabMods"], .settingsNavItem[rSc="settingsTabJava"], .settingsSwitchServerButton')).forEach((element) => {
+        element.disabled = !enabled
+        element.title = disabledTitle
+    })
+
+    Array.from(['settingsJavaExecSel', 'settingsJVMOptsVal', 'settingsDropinFileSystemButton', 'settingsShaderpackButton']).forEach((id) => {
+        const element = document.getElementById(id)
+        if(element != null){
+            element.disabled = !enabled
+            element.title = disabledTitle
+        }
+    })
+}
+
+function applyDistributionUnavailableState(){
+    setDistributionDependentSettingsEnabled(false)
+
+    Array.from(document.getElementsByClassName('settingsSelServContent')).forEach((element) => {
+        element.innerHTML = renderDistributionUnavailableMessage('settings.distributionFallback.serverPending')
+    })
+
+    document.getElementById('settingsReqModsContent').innerHTML = renderDistributionUnavailableMessage('settings.distributionFallback.modsPending')
+    document.getElementById('settingsOptModsContent').innerHTML = renderDistributionUnavailableMessage('settings.distributionFallback.modsPending')
+    document.getElementById('settingsDropinModsContent').innerHTML = renderDistributionUnavailableMessage('settings.distributionFallback.dropinsPending')
+
+    setShadersOptions([], null)
+    document.getElementById('settingsShadersSelected').innerHTML = Lang.queryJS('settings.distributionFallback.shaderpacksPending')
+    document.getElementById('settingsJavaExecDetails').innerHTML = Lang.queryJS('settings.distributionFallback.javaPending')
+    document.getElementById('settingsJavaReqDesc').innerHTML = Lang.queryJS('settings.distributionFallback.serverPending')
+    document.getElementById('settingsJvmOptsLink').removeAttribute('href')
+    document.getElementById('settingsJvmOptsLink').innerHTML = Lang.queryJS('settings.distributionFallback.jvmOptionsPending')
+    document.getElementById('settingsMaxRAMLabel').innerHTML = '--'
+    document.getElementById('settingsMinRAMLabel').innerHTML = '--'
+}
+
 function bindSettingsSelect(){
     for(let ele of document.getElementsByClassName('settingsSelectContainer')) {
         const selectedDiv = ele.getElementsByClassName('settingsSelectSelected')[0]
@@ -77,11 +123,6 @@ function bindFileSelectors(){
 
 bindFileSelectors()
 
-
-/**
- * General Settings Functions
- */
-
 /**
   * Bind value validators to the settings UI elements. These will
   * validate against the criteria defined in the ConfigManager (if
@@ -128,6 +169,13 @@ async function initSettingsValues(){
     for(const v of sEls) {
         const cVal = v.getAttribute('cValue')
         const serverDependent = v.hasAttribute('serverDependent') // Means the first argument is the server id.
+        if(serverDependent && !hasSelectedServerContext()) {
+            if(v.tagName === 'INPUT' && (v.type === 'number' || v.type === 'text')){
+                v.value = ''
+            }
+            continue
+        }
+
         const gFn = ConfigManager['get' + cVal]
         const gFnOpts = []
         if(serverDependent) {
@@ -180,6 +228,10 @@ function saveSettingsValues(){
     Array.from(sEls).map((v, index, arr) => {
         const cVal = v.getAttribute('cValue')
         const serverDependent = v.hasAttribute('serverDependent') // Means the first argument is the server id.
+        if(serverDependent && !hasSelectedServerContext()) {
+            return
+        }
+
         const sFn = ConfigManager['set' + cVal]
         const sFnOpts = []
         if(serverDependent) {
@@ -323,10 +375,12 @@ function settingsSaveDisabled(v){
 
 function fullSettingsSave() {
     saveSettingsValues()
-    saveModConfiguration()
+    if(hasSelectedServerContext()) {
+        saveModConfiguration()
+        saveDropinModConfiguration()
+        saveShaderpackSettings()
+    }
     ConfigManager.save()
-    saveDropinModConfiguration()
-    saveShaderpackSettings()
 }
 
 /* Closes the settings view and saves all data. */
@@ -711,10 +765,20 @@ const settingsModsContainer = document.getElementById('settingsModsContainer')
  * Resolve and update the mods on the UI.
  */
 async function resolveModsForUI(){
-    const serv = ConfigManager.getSelectedServer()
+    if(!hasSelectedServerContext()) {
+        applyDistributionUnavailableState()
+        return
+    }
 
+    const serv = ConfigManager.getSelectedServer()
     const distro = await DistroAPI.getDistribution()
     const servConf = ConfigManager.getModConfiguration(serv)
+
+    if(servConf == null) {
+        document.getElementById('settingsReqModsContent').innerHTML = ''
+        document.getElementById('settingsOptModsContent').innerHTML = ''
+        return
+    }
 
     const modStr = parseModulesForUI(distro.getServerById(serv).modules, false, servConf.mods)
 
@@ -816,8 +880,16 @@ function bindModsToggleSwitch(){
  * Save the mod configuration based on the UI values.
  */
 function saveModConfiguration(){
+    if(!hasSelectedServerContext()) {
+        return
+    }
+
     const serv = ConfigManager.getSelectedServer()
     const modConf = ConfigManager.getModConfiguration(serv)
+    if(modConf == null) {
+        return
+    }
+
     modConf.mods = _saveModConfiguration(modConf.mods)
     ConfigManager.setModConfiguration(serv, modConf)
 }
@@ -856,6 +928,13 @@ let CACHE_DROPIN_MODS
  * populate the results onto the UI.
  */
 async function resolveDropinModsForUI(){
+    if(!hasSelectedServerContext()) {
+        CACHE_SETTINGS_MODS_DIR = null
+        CACHE_DROPIN_MODS = []
+        document.getElementById('settingsDropinModsContent').innerHTML = renderDistributionUnavailableMessage('settings.distributionFallback.dropinsPending')
+        return
+    }
+
     const serv = (await DistroAPI.getDistribution()).getServerById(ConfigManager.getSelectedServer())
     CACHE_SETTINGS_MODS_DIR = path.join(ConfigManager.getInstanceDirectory(), serv.rawServer.id, 'mods')
     CACHE_DROPIN_MODS = DropinModUtil.scanForDropinMods(CACHE_SETTINGS_MODS_DIR, serv.rawServer.minecraftVersion)
@@ -945,6 +1024,10 @@ function bindDropinModFileSystemButton(){
  * of adding/removing the .disabled extension.
  */
 function saveDropinModConfiguration(){
+    if(!hasSelectedServerContext() || !Array.isArray(CACHE_DROPIN_MODS)) {
+        return
+    }
+
     for(dropin of CACHE_DROPIN_MODS){
         const dropinUI = document.getElementById(dropin.fullName)
         if(dropinUI != null){
@@ -995,6 +1078,15 @@ let CACHE_SELECTED_SHADERPACK
  * Load shaderpack information.
  */
 async function resolveShaderpacksForUI(){
+    if(!hasSelectedServerContext()) {
+        CACHE_SETTINGS_INSTANCE_DIR = null
+        CACHE_SHADERPACKS = []
+        CACHE_SELECTED_SHADERPACK = null
+        setShadersOptions([], null)
+        document.getElementById('settingsShadersSelected').innerHTML = Lang.queryJS('settings.distributionFallback.shaderpacksPending')
+        return
+    }
+
     const serv = (await DistroAPI.getDistribution()).getServerById(ConfigManager.getSelectedServer())
     CACHE_SETTINGS_INSTANCE_DIR = path.join(ConfigManager.getInstanceDirectory(), serv.rawServer.id)
     CACHE_SHADERPACKS = DropinModUtil.scanForShaderpacks(CACHE_SETTINGS_INSTANCE_DIR)
@@ -1027,6 +1119,10 @@ function setShadersOptions(arr, selected){
 }
 
 function saveShaderpackSettings(){
+    if(!hasSelectedServerContext() || CACHE_SETTINGS_INSTANCE_DIR == null) {
+        return
+    }
+
     let sel = 'OFF'
     for(let opt of document.getElementById('settingsShadersOptions').childNodes){
         if(opt.hasAttribute('selected')){
@@ -1071,6 +1167,13 @@ function bindShaderpackButton() {
  * Load the currently selected server information onto the mods tab.
  */
 async function loadSelectedServerOnModsTab(){
+    if(!hasSelectedServerContext()) {
+        Array.from(document.getElementsByClassName('settingsSelServContent')).forEach((element) => {
+            element.innerHTML = renderDistributionUnavailableMessage('settings.distributionFallback.serverPending')
+        })
+        return
+    }
+
     const serv = (await DistroAPI.getDistribution()).getServerById(ConfigManager.getSelectedServer())
 
     for(const el of document.getElementsByClassName('settingsSelServContent')) {
@@ -1110,6 +1213,10 @@ Array.from(document.getElementsByClassName('settingsSwitchServerButton')).forEac
  * Save mod configuration for the current selected server.
  */
 function saveAllModConfigurations(){
+    if(!hasSelectedServerContext()) {
+        return
+    }
+
     saveModConfiguration()
     ConfigManager.save()
     saveDropinModConfiguration()
@@ -1130,6 +1237,11 @@ function animateSettingsTabRefresh(){
  * Prepare the Mods tab for display.
  */
 async function prepareModsTab(first){
+    if(!hasSelectedServerContext()) {
+        applyDistributionUnavailableState()
+        return
+    }
+
     await resolveModsForUI()
     await resolveDropinModsForUI()
     await resolveShaderpacksForUI()
@@ -1336,6 +1448,11 @@ function populateMemoryStatus(){
  * @param {string} execPath The executable path to populate against.
  */
 async function populateJavaExecDetails(execPath){
+    if(!hasSelectedServerContext()) {
+        settingsJavaExecDetails.innerHTML = Lang.queryJS('settings.distributionFallback.javaPending')
+        return
+    }
+
     const server = (await DistroAPI.getDistribution()).getServerById(ConfigManager.getSelectedServer())
 
     const details = await validateSelectedJvm(ensureJavaDirIsRoot(execPath), server.effectiveJavaOptions.supported)
@@ -1384,10 +1501,16 @@ function bindMinMaxRam(server) {
  * Prepare the Java tab for display.
  */
 async function prepareJavaTab(){
+    populateMemoryStatus()
+
+    if(!hasSelectedServerContext()) {
+        applyDistributionUnavailableState()
+        return
+    }
+
     const server = (await DistroAPI.getDistribution()).getServerById(ConfigManager.getSelectedServer())
     bindMinMaxRam(server)
     bindRangeSlider(server)
-    populateMemoryStatus()
     populateJavaReqDesc(server)
     populateJvmOptsLink(server)
 }
@@ -1570,13 +1693,25 @@ async function prepareSettings(first = false) {
         setupSettingsTabs()
         initSettingsValidators()
         prepareUpdateTab()
-    } else {
-        await prepareModsTab()
     }
+
+    if(hasSelectedServerContext()) {
+        setDistributionDependentSettingsEnabled(true)
+        if(!first){
+            await prepareModsTab()
+        }
+    } else {
+        applyDistributionUnavailableState()
+    }
+
     await initSettingsValues()
     prepareAccountsTab()
     await prepareJavaTab()
     prepareAboutTab()
+
+    if(!hasSelectedServerContext() && (selectedSettingsTab === 'settingsTabMods' || selectedSettingsTab === 'settingsTabJava')) {
+        settingsNavItemListener(document.getElementById('settingsNavAccount'), false)
+    }
 }
 
 // Prepare the settings UI on startup.

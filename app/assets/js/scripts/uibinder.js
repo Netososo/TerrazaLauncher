@@ -11,7 +11,8 @@ const ConfigManager = require('./assets/js/configmanager')
 const { DistroAPI } = require('./assets/js/distromanager')
 
 let rscShouldLoad = false
-let fatalStartupError = false
+let startupDistributionAvailable = false
+let limitedStartupNoticeShown = false
 
 // Mapping of each view to their container IDs.
 const VIEWS = {
@@ -57,7 +58,23 @@ function getCurrentView(){
     return currentView
 }
 
-async function showMainUI(data){
+function setDistributionAvailability(available){
+    if(window.launcherMode == null){
+        window.launcherMode = {}
+    }
+    window.launcherMode.distributionAvailable = available === true
+}
+
+function isDistributionAvailable(){
+    return window.launcherMode?.distributionAvailable === true
+}
+
+window.setDistributionAvailability = setDistributionAvailability
+window.isDistributionAvailable = isDistributionAvailable
+
+async function showMainUI(data = null){
+    const hasDistribution = data != null
+    setDistributionAvailability(hasDistribution)
 
     if(!isDev){
         loggerAutoUpdater.info('Initializing..')
@@ -65,7 +82,11 @@ async function showMainUI(data){
     }
 
     await prepareSettings(true)
-    updateSelectedServer(data.getServerById(ConfigManager.getSelectedServer()))
+    if(hasDistribution){
+        updateSelectedServer(data.getServerById(ConfigManager.getSelectedServer()))
+    } else {
+        updateSelectedServer(null)
+    }
     refreshServerStatus()
     setTimeout(() => {
         document.getElementById('frameBar').style.backgroundColor = 'rgba(0, 0, 0, 0.5)'
@@ -101,6 +122,10 @@ async function showMainUI(data){
         setTimeout(() => {
             $('#loadingContainer').fadeOut(500, () => {
                 $('#loadSpinnerImage').removeClass('rotating')
+                if(!hasDistribution && !limitedStartupNoticeShown){
+                    limitedStartupNoticeShown = true
+                    showDistributionUnavailableNotice()
+                }
             })
         }, 250)
         
@@ -112,22 +137,16 @@ async function showMainUI(data){
     })
 }
 
-function showFatalStartupError(){
-    setTimeout(() => {
-        $('#loadingContainer').fadeOut(250, () => {
-            document.getElementById('overlayContainer').style.background = 'none'
-            setOverlayContent(
-                Lang.queryJS('uibinder.startup.fatalErrorTitle'),
-                Lang.queryJS('uibinder.startup.fatalErrorMessage'),
-                Lang.queryJS('uibinder.startup.closeButton')
-            )
-            setOverlayHandler(() => {
-                const window = remote.getCurrentWindow()
-                window.close()
-            })
-            toggleOverlay(true)
-        })
-    }, 750)
+function showDistributionUnavailableNotice(){
+    setOverlayContent(
+        Lang.queryJS('uibinder.startup.limitedModeTitle'),
+        Lang.queryJS('uibinder.startup.limitedModeMessage'),
+        Lang.queryJS('uibinder.startup.continueButton')
+    )
+    setOverlayHandler(() => {
+        toggleOverlay(false)
+    })
+    toggleOverlay(true)
 }
 
 /**
@@ -424,15 +443,11 @@ function setSelectedAccount(uuid){
 // Synchronous Listener
 document.addEventListener('readystatechange', async () => {
 
-    if (document.readyState === 'interactive' || document.readyState === 'complete'){
+        if (document.readyState === 'interactive' || document.readyState === 'complete'){
         if(rscShouldLoad){
             rscShouldLoad = false
-            if(!fatalStartupError){
-                const data = await DistroAPI.getDistribution()
-                await showMainUI(data)
-            } else {
-                showFatalStartupError()
-            }
+            const data = startupDistributionAvailable ? await DistroAPI.getDistribution() : null
+            await showMainUI(data)
         } 
     }
 
@@ -441,6 +456,7 @@ document.addEventListener('readystatechange', async () => {
 // Actions that must be performed after the distribution index is downloaded.
 ipcRenderer.on('distributionIndexDone', async (event, res) => {
     if(res) {
+        startupDistributionAvailable = true
         const data = await DistroAPI.getDistribution()
         syncModConfigurations(data)
         ensureJavaSettings(data)
@@ -450,9 +466,9 @@ ipcRenderer.on('distributionIndexDone', async (event, res) => {
             rscShouldLoad = true
         }
     } else {
-        fatalStartupError = true
+        startupDistributionAvailable = false
         if(document.readyState === 'interactive' || document.readyState === 'complete'){
-            showFatalStartupError()
+            await showMainUI(null)
         } else {
             rscShouldLoad = true
         }
