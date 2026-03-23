@@ -184,6 +184,42 @@ app.disableHardwareAcceleration()
 
 const MSFT_AUTH_REDIRECT_URI = 'https://login.microsoftonline.com/common/oauth2/nativeclient'
 
+function decodeMicrosoftAuthParam(value = '') {
+    try {
+        return decodeURIComponent(value)
+    } catch (err) {
+        return value
+    }
+}
+
+function parseMicrosoftAuthParams(rawParams) {
+    const queryMap = {}
+
+    if(rawParams == null || rawParams.length === 0) {
+        return queryMap
+    }
+
+    rawParams.split('&').forEach((entry) => {
+        if(entry.length === 0) {
+            return
+        }
+
+        const separatorIndex = entry.indexOf('=')
+        const rawName = separatorIndex === -1 ? entry : entry.substring(0, separatorIndex)
+        const rawValue = separatorIndex === -1 ? '' : entry.substring(separatorIndex + 1)
+        const name = decodeMicrosoftAuthParam(rawName.replace(/\+/g, '%20'))
+
+        if(name.length === 0 || Object.prototype.hasOwnProperty.call(queryMap, name)) {
+            return
+        }
+
+        // Preserve literal plus signs in auth codes while still decoding percent-escaped data.
+        queryMap[name] = decodeMicrosoftAuthParam(rawValue)
+    })
+
+    return queryMap
+}
+
 function getMicrosoftAuthQueryMap(uri) {
     const parsedUrl = new URL(uri)
     const redirectUrl = new URL(MSFT_AUTH_REDIRECT_URI)
@@ -192,11 +228,11 @@ function getMicrosoftAuthQueryMap(uri) {
         return null
     }
 
-    const queryMap = Object.fromEntries(parsedUrl.searchParams.entries())
+    const queryMap = parseMicrosoftAuthParams(parsedUrl.search.startsWith('?') ? parsedUrl.search.substring(1) : '')
 
     if(parsedUrl.hash && parsedUrl.hash.length > 1) {
-        const hashParams = new URLSearchParams(parsedUrl.hash.substring(1))
-        for(const [name, value] of hashParams.entries()) {
+        const hashParams = parseMicrosoftAuthParams(parsedUrl.hash.substring(1))
+        for(const [name, value] of Object.entries(hashParams)) {
             if(!Object.prototype.hasOwnProperty.call(queryMap, name)) {
                 queryMap[name] = value
             }
@@ -247,7 +283,7 @@ ipcMain.on(MSFT_OPCODE.OPEN_LOGIN, (ipcEvent, ...arguments_) => {
         }
     })
 
-    const handleMicrosoftAuthNavigation = (_, uri) => {
+    const handleMicrosoftAuthNavigation = (event, uri) => {
         if(msftAuthSuccess || msftAuthWindow == null) {
             return
         }
@@ -263,6 +299,10 @@ ipcMain.on(MSFT_OPCODE.OPEN_LOGIN, (ipcEvent, ...arguments_) => {
             return
         }
 
+        if(event != null && typeof event.preventDefault === 'function') {
+            event.preventDefault()
+        }
+
         msftAuthSuccess = true
         ipcEvent.reply(MSFT_OPCODE.REPLY_LOGIN, MSFT_REPLY_TYPE.SUCCESS, queryMap, msftAuthViewSuccess)
 
@@ -272,8 +312,11 @@ ipcMain.on(MSFT_OPCODE.OPEN_LOGIN, (ipcEvent, ...arguments_) => {
         msftAuthWindow = null
     }
 
-    msftAuthWindow.webContents.on('did-navigate', handleMicrosoftAuthNavigation)
-    msftAuthWindow.webContents.on('did-redirect-navigation', handleMicrosoftAuthNavigation)
+    msftAuthWindow.webContents.on('will-redirect', handleMicrosoftAuthNavigation)
+    msftAuthWindow.webContents.on('will-navigate', handleMicrosoftAuthNavigation)
+    msftAuthWindow.webContents.on('did-navigate', (_, uri) => {
+        handleMicrosoftAuthNavigation(null, uri)
+    })
 
     const authUrl = new URL('https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize')
     authUrl.search = new URLSearchParams({
