@@ -203,6 +203,10 @@ function getMicrosoftAuthQueryMap(uri) {
         }
     }
 
+    if(!Object.prototype.hasOwnProperty.call(queryMap, 'code') && !Object.prototype.hasOwnProperty.call(queryMap, 'error')) {
+        return null
+    }
+
     return queryMap
 }
 

@@ -468,6 +468,21 @@ ipcRenderer.on(MSFT_OPCODE.REPLY_LOGIN, (_, ...arguments_) => {
             msftLoginLogger.info('Acquired authCode, proceeding with authentication.')
 
             const authCode = queryMap.code
+            if(typeof authCode !== 'string' || authCode.trim().length === 0) {
+                msftLoginLogger.error('Microsoft callback did not include a valid authorization code.', queryMap)
+                switchView(getCurrentView(), viewOnClose, 500, 500, () => {
+                    setOverlayContent(
+                        Lang.queryJS('settings.msftLogin.errorTitle'),
+                        Lang.queryJS('settings.msftLogin.errorMessage'),
+                        Lang.queryJS('settings.msftLogin.okButton')
+                    )
+                    setOverlayHandler(() => {
+                        toggleOverlay(false)
+                    })
+                    toggleOverlay(true)
+                })
+                return
+            }
             AuthManager.addMicrosoftAccount(authCode).then(value => {
                 updateSelectedAccount(value)
                 switchView(getCurrentView(), viewOnClose, 500, 500, async () => {
