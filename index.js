@@ -182,7 +182,29 @@ ipcMain.on(SECURE_STORAGE_OPCODE.DECRYPT_STRING, (event, value) => {
 app.disableHardwareAcceleration()
 
 
-const REDIRECT_URI_PREFIX = 'https://login.microsoftonline.com/common/oauth2/nativeclient?'
+const MSFT_AUTH_REDIRECT_URI = 'https://login.microsoftonline.com/common/oauth2/nativeclient'
+
+function getMicrosoftAuthQueryMap(uri) {
+    const parsedUrl = new URL(uri)
+    const redirectUrl = new URL(MSFT_AUTH_REDIRECT_URI)
+
+    if(parsedUrl.origin !== redirectUrl.origin || parsedUrl.pathname !== redirectUrl.pathname) {
+        return null
+    }
+
+    const queryMap = Object.fromEntries(parsedUrl.searchParams.entries())
+
+    if(parsedUrl.hash && parsedUrl.hash.length > 1) {
+        const hashParams = new URLSearchParams(parsedUrl.hash.substring(1))
+        for(const [name, value] of hashParams.entries()) {
+            if(!Object.prototype.hasOwnProperty.call(queryMap, name)) {
+                queryMap[name] = value
+            }
+        }
+    }
+
+    return queryMap
+}
 
 // Microsoft Auth Login
 let msftAuthWindow
@@ -221,26 +243,45 @@ ipcMain.on(MSFT_OPCODE.OPEN_LOGIN, (ipcEvent, ...arguments_) => {
         }
     })
 
-    msftAuthWindow.webContents.on('did-navigate', (_, uri) => {
-        if (uri.startsWith(REDIRECT_URI_PREFIX)) {
-            let queries = uri.substring(REDIRECT_URI_PREFIX.length).split('#', 1).toString().split('&')
-            let queryMap = {}
-
-            queries.forEach(query => {
-                const [name, value] = query.split('=')
-                queryMap[name] = decodeURI(value)
-            })
-
-            ipcEvent.reply(MSFT_OPCODE.REPLY_LOGIN, MSFT_REPLY_TYPE.SUCCESS, queryMap, msftAuthViewSuccess)
-
-            msftAuthSuccess = true
-            msftAuthWindow.close()
-            msftAuthWindow = null
+    const handleMicrosoftAuthNavigation = (_, uri) => {
+        if(msftAuthSuccess || msftAuthWindow == null) {
+            return
         }
-    })
+
+        let queryMap
+        try {
+            queryMap = getMicrosoftAuthQueryMap(uri)
+        } catch (err) {
+            return
+        }
+
+        if(queryMap == null) {
+            return
+        }
+
+        msftAuthSuccess = true
+        ipcEvent.reply(MSFT_OPCODE.REPLY_LOGIN, MSFT_REPLY_TYPE.SUCCESS, queryMap, msftAuthViewSuccess)
+
+        if(msftAuthWindow != null && !msftAuthWindow.isDestroyed()) {
+            msftAuthWindow.close()
+        }
+        msftAuthWindow = null
+    }
+
+    msftAuthWindow.webContents.on('did-navigate', handleMicrosoftAuthNavigation)
+    msftAuthWindow.webContents.on('did-redirect-navigation', handleMicrosoftAuthNavigation)
+
+    const authUrl = new URL('https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize')
+    authUrl.search = new URLSearchParams({
+        prompt: 'select_account',
+        client_id: AZURE_CLIENT_ID,
+        response_type: 'code',
+        scope: 'XboxLive.signin offline_access',
+        redirect_uri: MSFT_AUTH_REDIRECT_URI
+    }).toString()
 
     msftAuthWindow.removeMenu()
-    msftAuthWindow.loadURL(`https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?prompt=select_account&client_id=${AZURE_CLIENT_ID}&response_type=code&scope=XboxLive.signin%20offline_access&redirect_uri=https://login.microsoftonline.com/common/oauth2/nativeclient`)
+    msftAuthWindow.loadURL(authUrl.toString())
 })
 
 // Microsoft Auth Logout
